@@ -116,7 +116,7 @@ public class SteveProdStarter implements ApplicationStarter {
         EndpointInfo info = EndpointInfo.INSTANCE;
 
         printInfo(info.getWebInterface());
-        printInfo(info.getOcppSoap());
+        // printInfo(info.getOcppSoap());
         printInfo(info.getOcppWebSocket());
     }
 

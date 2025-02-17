@@ -2,7 +2,8 @@
 <Configuration status="WARN">
 
     <Properties>
-        <Property name="logPattern">[%-5p] %d %c (%t) - %m%n</Property>
+        <!-- <Property name="logPattern">[%-5p] %d %c (%t) - %m%n</Property> -->
+        <Property name="logPattern">[%-5p] %d - %m%n</Property>
     </Properties>
 
     <Appenders>

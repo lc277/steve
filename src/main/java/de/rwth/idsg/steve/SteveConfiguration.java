@@ -26,6 +26,16 @@ import lombok.Getter;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.time.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.Scanner;
+
 /**
  * @author Sevket Goekay <sevketgokay@gmail.com>
  * @since 19.08.2014
@@ -46,6 +56,7 @@ public enum SteveConfiguration {
     private final String routerEndpointPath = "/CentralSystemService";
     // Time zone for the application and database connections
     private final String timeZoneId = "UTC";  // or ZoneId.systemDefault().getId();
+//    private final String timeZoneId = ZoneId.systemDefault().getId();
 
     // -------------------------------------------------------------------------
     // main.properties
@@ -64,6 +75,36 @@ public enum SteveConfiguration {
     SteveConfiguration() {
         PropertiesFileLoader p = new PropertiesFileLoader("main.properties");
 
+        Enumeration<NetworkInterface> enu = null;
+        try {
+            enu = NetworkInterface.getNetworkInterfaces();
+        } catch (SocketException e) {
+            e.printStackTrace();
+        }
+        assert enu != null;
+        ArrayList<NetworkInterface> arr = Collections.list(enu);
+
+        System.out.println();
+        for (NetworkInterface o : arr) {
+            String intName = o.getName();
+            String IfName = o.getDisplayName();
+            ArrayList<InetAddress> inets = Collections.list(o.getInetAddresses());
+            for (InetAddress inet : inets) {
+                if (inet instanceof Inet4Address) {
+                    String ipp = inet.getHostAddress();
+//                    System.out.printf("%-10s %-5s %-6s %-15s\n", "InterfaceName:", intName, "| IPv4:", ipp);
+                    System.out.printf("%-6s %-15s %s %-5s %s %-5s\n", "IPv4:", ipp, "|", intName, "|", IfName);
+                }
+            }
+        }
+
+        System.out.println();
+        System.out.print("select ipv4 :");
+        Scanner Scaddr = new Scanner(System.in);
+        String hostip = Scaddr.nextLine();
+        System.out.println("input:" + hostip);
+        System.out.println();
+
         contextPath = sanitizeContextPath(p.getOptionalString("context.path"));
         steveVersion = p.getString("steve.version");
         gitDescribe = useFallbackIfNotSet(p.getOptionalString("git.describe"), null);
@@ -72,7 +113,8 @@ public enum SteveConfiguration {
         System.setProperty("spring.profiles.active", profile.name().toLowerCase());
 
         jetty = Jetty.builder()
-                     .serverHost(p.getString("server.host"))
+//                     .serverHost(p.getString("server.host"))
+                     .serverHost(hostip)
                      .gzipEnabled(p.getBoolean("server.gzip.enabled"))
                      .httpEnabled(p.getBoolean("http.enabled"))
                      .httpPort(p.getInt("http.port"))
