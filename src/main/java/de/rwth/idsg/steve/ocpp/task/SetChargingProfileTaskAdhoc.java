@@ -16,14 +16,34 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package de.rwth.idsg.steve;
+package de.rwth.idsg.steve.ocpp.task;
+
+import de.rwth.idsg.steve.ocpp.OcppCallback;
+import de.rwth.idsg.steve.web.dto.ocpp.MultipleChargePointSelect;
+import ocpp.cp._2015._10.SetChargingProfileRequest;
 
 /**
  * @author Sevket Goekay <sevketgokay@gmail.com>
- * @since 05.11.2015
+ * @since 16.02.2025
  */
-public interface ApplicationStarter {
-    void start() throws Exception;
-    void join() throws Exception;
-    void stop() throws Exception;
+public class SetChargingProfileTaskAdhoc extends SetChargingProfileTask {
+
+    private final SetChargingProfileRequest request;
+
+    public SetChargingProfileTaskAdhoc(MultipleChargePointSelect params,
+                                       SetChargingProfileRequest request) {
+        super(params);
+        this.request = request;
+        checkAdditionalConstraints(request);
+    }
+
+    @Override
+    public OcppCallback<String> defaultCallback() {
+        return new StringOcppCallback();
+    }
+
+    @Override
+    public SetChargingProfileRequest getOcpp16Request() {
+        return request;
+    }
 }

@@ -290,6 +290,9 @@ public class TransactionRepositoryImpl implements TransactionRepository {
 
         if (form.getType() == TransactionQueryForm.QueryType.ACTIVE) {
             selectQuery.addConditions(TRANSACTION.STOP_TIMESTAMP.isNull());
+
+        } else if (form.getType() == TransactionQueryForm.QueryType.STOPPED) {
+            selectQuery.addConditions(TRANSACTION.STOP_TIMESTAMP.isNotNull());
         }
 
         processType(selectQuery, form);
@@ -324,9 +327,16 @@ public class TransactionRepositoryImpl implements TransactionRepository {
                 break;
 
             case FROM_TO:
-                selectQuery.addConditions(
-                        TRANSACTION.START_TIMESTAMP.between(form.getFrom().toDateTime(), form.getTo().toDateTime())
-                );
+                DateTime from = form.getFrom().toDateTime();
+                DateTime to = form.getTo().toDateTime();
+
+                if (form.getType() == TransactionQueryForm.QueryType.ACTIVE) {
+                    selectQuery.addConditions(TRANSACTION.START_TIMESTAMP.between(from, to));
+
+                } else if (form.getType() == TransactionQueryForm.QueryType.STOPPED) {
+                    selectQuery.addConditions(TRANSACTION.STOP_TIMESTAMP.between(from, to));
+                }
+
                 break;
 
             default:
