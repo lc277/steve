@@ -19,6 +19,7 @@
 package de.rwth.idsg.steve;
 
 import de.rwth.idsg.steve.utils.LogFileRetriever;
+import de.rwth.idsg.steve.SteveProdStarter;
 import lombok.extern.slf4j.Slf4j;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
@@ -54,12 +55,16 @@ public class Application {
         }
 
         Application app = new Application();
+        SteveProdStarter starter = new SteveProdStarter();
+        starter.starting();
 
         try {
             app.start();
+            starter.started();
             app.join();
         } catch (Exception e) {
             log.error("Application failed to start", e);
+            starter.failed();
 
             if (loggingToFile) {
                 System.err.println("Application failed to start");
