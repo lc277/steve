@@ -18,6 +18,7 @@
  */
 package de.rwth.idsg.steve.web.dto;
 
+import de.rwth.idsg.steve.config.WebSocketConfiguration;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
@@ -40,7 +41,7 @@ public class EndpointInfo {
 
         return EndpointInfo.builder()
             .ocppSoap(httpScheme + "://" + host + contextPath + "/services/CentralSystemService")
-            .ocppWebSocket(webSocketScheme + "://" + host + contextPath + "/websocket/CentralSystemService/(chargeBoxId)")
+            .ocppWebSocket(webSocketScheme + "://" + host + contextPath + WebSocketConfiguration.PATH_INFIX + "(chargeBoxId)")
             .build();
     }
 }

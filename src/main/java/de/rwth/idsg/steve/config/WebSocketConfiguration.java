@@ -52,7 +52,8 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
     private final List<AbstractWebSocketEndpoint> endpoints;
     private final CertificateValidator certificateValidator;
 
-    public static final String PATH_INFIX = "/websocket/CentralSystemService/";
+    /** Servlet path infix for OCPP-J; full URL is {@code {contextPath}/ocpp/{chargeBoxId}}. */
+    public static final String PATH_INFIX = "/ocpp/";
     public static final Duration PING_INTERVAL = Duration.ofMinutes(15);
     public static final Duration IDLE_TIMEOUT = Duration.ofHours(2);
     public static final int MAX_MSG_SIZE = 8_388_608; // 8 MB for max message size
