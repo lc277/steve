@@ -35,39 +35,39 @@ import java.nio.channels.ClosedChannelException;
 public final class WebSocketLogger {
 
     public static void connected(String chargeBoxId, WebSocketSession session) {
-        log.info("[chargeBoxId={}, sessionId={}] Connection is established", chargeBoxId, session.getId());
+        log.info("[{} Connection is established", chargeBoxId, session.getId());
     }
 
     public static void closed(String chargeBoxId, WebSocketSession session, CloseStatus closeStatus) {
-        log.warn("[chargeBoxId={}, sessionId={}] Connection is closed, status: {}", chargeBoxId, session.getId(), closeStatus);
+        log.warn("[{} Connection is closed, status: {}", chargeBoxId, closeStatus);
     }
 
     public static void sending(String chargeBoxId, WebSocketSession session, String msg) {
-        log.info("[chargeBoxId={}, sessionId={}] Sending: {}", chargeBoxId, session.getId(), msg);
+        log.info("[{} Send: {}", chargeBoxId, msg);
     }
 
     public static void willNotSend(String chargeBoxId, WebSocketSession session, String msg) {
-        log.warn("[chargeBoxId={}, sessionId={}] Attempted to send to closed session: {}", chargeBoxId, session.getId(), msg);
+        log.warn("[{} Attempted to send to closed session: {}", chargeBoxId, msg);
     }
 
     public static void sendingPing(String chargeBoxId, WebSocketSession session) {
-        log.debug("[chargeBoxId={}, sessionId={}] Sending ping message", chargeBoxId, session.getId());
+        log.debug("[{} Send ping message", chargeBoxId, session.getId());
     }
 
     public static void receivedPong(String chargeBoxId, WebSocketSession session) {
-        log.debug("[chargeBoxId={}, sessionId={}] Received pong message", chargeBoxId, session.getId());
+        log.debug("[{} Recv pong message", chargeBoxId, session.getId());
     }
 
     public static void receivedText(String chargeBoxId, WebSocketSession session, String msg) {
-        log.info("[chargeBoxId={}, sessionId={}] Received: {}", chargeBoxId, session.getId(), msg);
+        log.info("[{} Recv: {}", chargeBoxId, msg);
     }
 
     public static void receivedEmptyText(String chargeBoxId, WebSocketSession session) {
-        log.warn("[chargeBoxId={}, sessionId={}] Received empty text message. Will pretend this never happened.", chargeBoxId, session.getId());
+        log.warn("[{} Recv empty text message. Will pretend this never happened.", chargeBoxId, session.getId());
     }
 
     public static void pingError(String chargeBoxId, WebSocketSession session, Throwable t) {
-        log.error("[chargeBoxId={}, sessionId={}] Ping error", chargeBoxId, session.getId(), t);
+        log.error("[{} Ping error", chargeBoxId, t);
     }
 
     public static void transportError(String chargeBoxId, WebSocketSession session, Throwable t) {
@@ -77,17 +77,17 @@ public final class WebSocketLogger {
         // networks. ClosedChannelException is Jetty's way of notifying that the connection ended unexpectedly. This can
         // be seen as normal behavior in WebSocket applications. No need to print stacktrace (which is useless anyway).
         if (t instanceof ClosedChannelException) {
-            log.warn("[chargeBoxId={}, sessionId={}] Connection ended unexpectedly", chargeBoxId, session.getId());
+            log.warn("[{} Connection ended unexpectedly", chargeBoxId, session.getId());
         } else {
-            log.error("[chargeBoxId={}, sessionId={}] Transport error", chargeBoxId, session.getId(), t);
+            log.error("[{} Transport error", chargeBoxId, t);
         }
     }
 
     public static void closingDangling(String chargeBoxId, WebSocketSession session) {
-        log.warn("[chargeBoxId={}, sessionId={}] Closing a dangling WebSocketSession", chargeBoxId, session.getId());
+        log.warn("[{} Closing a dangling WebSocketSession", chargeBoxId, session.getId());
     }
 
     public static void closingDanglingError(String chargeBoxId, WebSocketSession session, Throwable t) {
-        log.error("[chargeBoxId={}, sessionId={}] Error while trying to close the WebSocketSession", chargeBoxId, session.getId(), t);
+        log.error("[{} Error while trying to close the WebSocketSession", chargeBoxId, t);
     }
 }
