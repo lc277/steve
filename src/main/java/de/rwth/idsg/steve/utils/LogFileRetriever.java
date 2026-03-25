@@ -40,20 +40,15 @@ import java.util.concurrent.ThreadLocalRandom;
 public enum LogFileRetriever {
     INSTANCE;
 
-    private final List<Path> logPathList;
-
-    LogFileRetriever() {
-        logPathList = getActiveLogFilePaths();
-    }
-
     public Optional<Path> getPath() {
+        List<Path> logPathList = getActiveLogFilePaths();
         Path p;
         if (logPathList.isEmpty()) {
             p = null;
         } else if (logPathList.size() == 1) {
             p = logPathList.get(0);
         } else {
-            p = rollTheDice();
+            p = rollTheDice(logPathList);
         }
         return Optional.ofNullable(p);
     }
@@ -76,7 +71,7 @@ public enum LogFileRetriever {
      * Clearly, the only sane solution is rolling the dice.
      * Easter egg mode: On
      */
-    private Path rollTheDice() {
+    private Path rollTheDice(List<Path> logPathList) {
         log.trace("Rolling the dice...");
         int index = ThreadLocalRandom.current().nextInt(logPathList.size());
         return logPathList.get(index);
@@ -86,6 +81,10 @@ public enum LogFileRetriever {
      * We cannot presume that the default file name/location setting won't be changed by the user.
      * Therefore, we should be able to retrieve that info from the underlying logging mechanism
      * by iterating over appenders.
+     * <p>
+     * Resolved on each call: logging (and profile-specific logback) is configured only during
+     * {@link org.springframework.boot.SpringApplication#run}, so any earlier access must not be cached
+     * (e.g. {@code SteveProdStarter} printing the path before {@code application.run()}).
      */
     private List<Path> getActiveLogFilePaths() {
         Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);

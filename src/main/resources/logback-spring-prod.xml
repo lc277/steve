@@ -2,6 +2,7 @@
 <configuration>
     <property name="LOG_DIR" value="${user.home}/logs" />
     <property name="LOG_PATTERN" value="[%-5level] %d %c \(%thread\) - %msg%n" />
+    <property name="LOG_PATTERN_CONSOLE" value="[%-5level] %d - %msg%n" />
 
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_DIR}/steve.log</file>
@@ -19,7 +20,17 @@
         </encoder>
     </appender>
 
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="ch.qos.logback.classic.PatternLayout">
+                <pattern>${LOG_PATTERN_CONSOLE}</pattern>
+            </layout>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
     <root level="INFO">
+        <appender-ref ref="CONSOLE" />
         <appender-ref ref="FILE" />
     </root>
 
