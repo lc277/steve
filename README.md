@@ -41,6 +41,12 @@ DROP USER IF EXISTS 'steve'@'localhost';
 
 4. 创建 SteVe 所需的数据库和用户
 
+设置时区
+
+```
+SET GLOBAL time_zone = '+00:00';
+```
+
 ```
 CREATE DATABASE stevedb CHARACTER SET utf8 COLLATE utf8_unicode_ci;
 CREATE USER 'steve'@'localhost' IDENTIFIED BY 'changeme';
