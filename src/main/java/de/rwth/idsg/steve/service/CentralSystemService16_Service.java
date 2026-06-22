@@ -18,6 +18,7 @@
  */
 package de.rwth.idsg.steve.service;
 
+import de.rwth.idsg.steve.SteveException;
 import de.rwth.idsg.steve.ocpp.OcppProtocol;
 import de.rwth.idsg.steve.repository.EventRepository;
 import de.rwth.idsg.steve.repository.OcppServerRepository;
@@ -68,6 +69,7 @@ import ocpp.cs._2015._10.StatusNotificationRequest;
 import ocpp.cs._2015._10.StatusNotificationResponse;
 import ocpp.cs._2015._10.StopTransactionRequest;
 import ocpp.cs._2015._10.StopTransactionResponse;
+import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.joda.time.DateTime;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
@@ -147,6 +149,12 @@ public class CentralSystemService16_Service {
 
     public StatusNotificationResponse statusNotification(
             StatusNotificationRequest parameters, String chargeBoxIdentity) {
+
+        var exception = serviceValidator.validateStatusNotification(parameters);
+        if (exception != null) {
+            log.warn("StatusNotification validation failed: {}", exception.getMessage(), exception);
+        }
+
         // Optional field
         DateTime timestamp = parameters.isSetTimestamp() ? parameters.getTimestamp() : DateTime.now();
 
@@ -171,7 +179,7 @@ public class CentralSystemService16_Service {
 
          if (parameters.getStatus() == SUSPENDED_EV) {
             applicationEventPublisher.publishEvent(new OcppStationStatusSuspendedEV(
-                    chargeBoxIdentity, parameters.getConnectorId(), parameters.getTimestamp()));
+                    chargeBoxIdentity, parameters.getConnectorId(), timestamp));
         }
 
         // https://github.com/steve-community/steve/issues/1398
@@ -187,9 +195,16 @@ public class CentralSystemService16_Service {
     public MeterValuesResponse meterValues(MeterValuesRequest parameters, String chargeBoxIdentity) {
         Integer transactionId = getTransactionId(parameters);
 
-        var exception = serviceValidator.validateMeterValues(parameters);
+        SteveException exception;
+        if (transactionId == null) {
+            exception = serviceValidator.validateMeterValues(parameters);
+        } else {
+            var transaction = ocppServerRepository.getTransaction(chargeBoxIdentity, parameters.getConnectorId(), transactionId);
+            exception = serviceValidator.validateMeterValues(parameters, transaction);
+        }
+
         if (exception != null) {
-            log.warn("MeterValues validation failed", exception);
+            log.warn("MeterValues validation failed: {}", exception.getMessage(), exception);
         }
 
         ocppServerRepository.insertMeterValues(
@@ -232,7 +247,7 @@ public class CentralSystemService16_Service {
 
         var exception = serviceValidator.validateStart(parameters);
         if (exception != null) {
-            log.warn("StartTransaction validation failed", exception);
+            log.warn("StartTransaction validation failed: {}", exception.getMessage(), exception);
         }
 
         int transactionId = ocppServerRepository.insertTransaction(params);
@@ -268,7 +283,7 @@ public class CentralSystemService16_Service {
                                        .eventActor(TransactionStopEventActor.station)
                                        .build();
 
-        var transaction = ocppServerRepository.getTransaction(chargeBoxIdentity, transactionId);
+        var transaction = ocppServerRepository.getTransaction(chargeBoxIdentity, null, transactionId);
         var exception = serviceValidator.validateStop(transaction, parameters);
 
         if (exception == null) {
@@ -276,7 +291,7 @@ public class CentralSystemService16_Service {
             ocppServerRepository.insertMeterValues(chargeBoxIdentity, parameters.getTransactionData(), transaction);
             applicationEventPublisher.publishEvent(new OcppTransactionEnded(params));
         } else {
-            log.warn("StopTransaction validation failed", exception);
+            log.warn("StopTransaction validation failed: {}", exception.getMessage(), exception);
             ocppServerRepository.updateTransactionAsFailed(params, exception);
             // TODO: we need to handle meter values of invalid stops differently. will come later.
             ocppServerRepository.insertMeterValues(chargeBoxIdentity, parameters.getTransactionData(), transaction);
@@ -309,17 +324,13 @@ public class CentralSystemService16_Service {
      * Dummy implementation. This is new in OCPP 1.5. It must be vendor-specific.
      */
     public DataTransferResponse dataTransfer(DataTransferRequest parameters, String chargeBoxIdentity) {
-        log.info("[Data Transfer] Charge point: {}, Vendor Id: {}", chargeBoxIdentity, parameters.getVendorId());
-        if (parameters.isSetMessageId()) {
-            log.info("[Data Transfer] Message Id: {}", parameters.getMessageId());
-        }
-        if (parameters.isSetData()) {
-            log.info("[Data Transfer] Data: {}", parameters.getData());
-        }
+        log.warn("Cannot process DataTransfer from '{}'. Operation is not implemented. Rejecting DataTransfer={}", chargeBoxIdentity, parameters);
 
         // OCPP requires a status to be set. Since this is a dummy impl, set it to "Accepted".
         // https://github.com/steve-community/steve/pull/36
-        return new DataTransferResponse().withStatus(DataTransferStatus.ACCEPTED);
+        //
+        // 2026 Update: Better reject it to signal that this operation is not implemented/supported.
+        return new DataTransferResponse().withStatus(DataTransferStatus.REJECTED);
     }
 
     // -------------------------------------------------------------------------
@@ -328,14 +339,12 @@ public class CentralSystemService16_Service {
 
     public SignCertificateResponse signCertificate(SignCertificate parameters, String chargeBoxIdentity) {
         try {
-            if (!certificateSigningService.isEnabled()) {
-                log.error("Certificate signing service is not enabled.");
-                return new SignCertificateResponse().withStatus(GenericStatusEnumType.REJECTED);
-            }
-
-            var csr = parameters.getCsr();
-            if (csr == null || csr.trim().isEmpty()) {
-                log.error("Empty or null CSR received from '{}'", chargeBoxIdentity);
+            PKCS10CertificationRequest csr;
+            try {
+                var csrPem = parameters.getCsr();
+                csr = certificateSigningService.validateCSR(csrPem, chargeBoxIdentity);
+            } catch (Exception e) {
+                log.error("Could not validate CSR from '{}'", chargeBoxIdentity, e);
                 return new SignCertificateResponse().withStatus(GenericStatusEnumType.REJECTED);
             }
 
@@ -347,7 +356,7 @@ public class CentralSystemService16_Service {
              * subsequent process)
              */
             taskScheduler.schedule(
-                () -> certificateSigningService.processCSR(csr, chargeBoxIdentity),
+                () -> certificateSigningService.processAndSendToStation(csr, chargeBoxIdentity),
                 Instant.now().plusSeconds(5)
             );
 
@@ -360,6 +369,11 @@ public class CentralSystemService16_Service {
 
     public SecurityEventNotificationResponse securityEventNotification(SecurityEventNotification parameters,
                                                                        String chargeBoxIdentity) {
+        var exception = serviceValidator.validateSecurityEvent(parameters);
+        if (exception != null) {
+            log.warn("SecurityEvent validation failed: {}", exception.getMessage(), exception);
+        }
+
         try {
             eventRepository.insertSecurityEvent(
                 chargeBoxIdentity,

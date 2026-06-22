@@ -20,6 +20,7 @@ package de.rwth.idsg.steve.config;
 
 import de.rwth.idsg.steve.ocpp.ws.custom.WsSessionSelectStrategyEnum;
 import lombok.Data;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -88,12 +89,43 @@ public class SteveProperties {
 
         @Data
         public static class Security {
-            private int profile;
-            private int certificateValidityYears;
             private String clientCertHeaderFromProxy;
+            private CsrSigning csrSigning = new CsrSigning();
 
-            public boolean requiresTls() {
-                return profile >= 2;
+            @Data
+            public static class CsrSigning {
+                private String provider;
+                private LocalCsrSigning providerLocal = new LocalCsrSigning();
+
+                @Data
+                public static class LocalCsrSigning {
+                    private Integer certificateValidityYears;
+                    private IssuerConfig rsa = new IssuerConfig();
+                    private IssuerConfig ecdsa = new IssuerConfig();
+
+                    public boolean isValid() {
+                        return certificateValidityYears != null && (IssuerConfig.isValid(rsa) || IssuerConfig.isValid(ecdsa));
+                    }
+
+                    @Data
+                    public static class IssuerConfig {
+                        private String caCertificatePem;
+                        private String caKeyPem;
+
+                        /**
+                         * Optional PEM bundle for issuer chain in order:
+                         * signing cert -> intermediate(s) -> root.
+                         * If omitted, only caCertificatePem is sent as issuer chain.
+                         */
+                        private String caChainPem;
+
+                        public static boolean isValid(IssuerConfig issuer) {
+                            return issuer != null
+                                && !StringUtils.isBlank(issuer.caCertificatePem)
+                                && !StringUtils.isBlank(issuer.caKeyPem);
+                        }
+                    }
+                }
             }
         }
     }

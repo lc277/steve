@@ -5,7 +5,7 @@ spring:
   application:
     name: steve
   datasource:
-    url: jdbc:mysql://${db.ip}:${db.port}/${db.schema}
+    url: jdbc:@databaseName@://${db.ip}:${db.port}/${db.schema}
     username: ${db.user}
     password: ${db.password}
   servlet:
@@ -58,14 +58,25 @@ steve:
       v15: { soap: false, json: false }
       v16: { soap: true, json: true }
 
-    # OCPP 1.6 Security Profiles Configuration
-    # Other settings will be taken from server.ssl
+    # OCPP 1.6 security config.
+    # Note: security profile (0..3) is a per-charge-point state in DB, not a global application property.
     security:
-      # Profile 0: No HTTP basic authentication, no TLS
-      # Profile 1: HTTP basic authentication, no TLS
-      # Profile 2: HTTP basic authentication, TLS with server-side certificate
-      # Profile 3: TLS with client-side certificate, TLS with server-side certificate -> mutual TLS (mTLS)
-      profile: 0
-      certificate-validity-years: 1
+      # Relevant for stations with profile 3
       # See de.rwth.idsg.steve.service.CertificateValidator for documentation
       client-cert-header-from-proxy:
+      # Relevant for stations with profile 3
+      csr-signing:
+        provider:
+        # CSR signing configuration for provider=local. This is intentionally separate from server.ssl.
+        provider-local:
+          certificate-validity-years: 1
+          # Selection currently defaults to CSR key family; station-capability based policy belongs in
+          # CertificateSigningServiceLocal#selectIssuer.
+          rsa:
+            ca-certificate-pem:
+            ca-key-pem:
+            ca-chain-pem:
+          ecdsa:
+            ca-certificate-pem:
+            ca-key-pem:
+            ca-chain-pem:

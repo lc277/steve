@@ -19,9 +19,10 @@
 package de.rwth.idsg.steve.web.validation;
 
 import de.rwth.idsg.steve.ocpp.OcppSecurityProfile;
+import de.rwth.idsg.steve.ocpp.ws.JsonObjectMapper;
 import de.rwth.idsg.steve.repository.dto.ChargePointRegistration;
 import de.rwth.idsg.steve.service.ChargePointService;
-import de.rwth.idsg.steve.web.dto.ChargePointForm;
+import de.rwth.idsg.steve.web.dto.ChargePointFormForCreate;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -31,6 +32,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.Optional;
 
@@ -79,12 +81,14 @@ public class SecurityProfileValidatorTest {
                                     boolean isValid) {
         OcppSecurityProfile securityProfile = OcppSecurityProfile.fromValue(securityProfileNumber);
 
-        ChargePointForm form = new ChargePointForm();
+        ChargePointFormForCreate form = new ChargePointFormForCreate();
         form.setSecurityProfile(securityProfile);
         form.setAuthPassword(authPassword);
 
+        ObjectNode emptyNode = JsonObjectMapper.INSTANCE.getMapper().createObjectNode();
+
         ChargePointRegistration toReturn = stationExistsInDB
-            ? new ChargePointRegistration(-1, "chargeBoxId", "Accepted", securityProfile, authPasswordInDB, "cpoName", "serialNumber")
+            ? new ChargePointRegistration(-1, "chargeBoxId", "Accepted", securityProfile, authPasswordInDB, emptyNode, "serialNumber")
             : null;
 
         when(chargePointService.getRegistrationDirect(any())).thenReturn(Optional.ofNullable(toReturn));

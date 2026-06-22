@@ -25,6 +25,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
+import ocpp.cs._2015._10.RegistrationStatus;
 import org.hibernate.validator.constraints.Length;
 import org.hibernate.validator.constraints.URL;
 
@@ -42,7 +43,7 @@ import static de.rwth.idsg.steve.ocpp.OcppSecurityProfile.Profile_0;
 @Setter
 @ToString
 @SecurityProfileValid
-public class ChargePointForm {
+public class ChargePointFormForCreate {
 
     // Internal database id
     private Integer chargeBoxPk;
@@ -51,8 +52,11 @@ public class ChargePointForm {
     @ChargeBoxId
     private String chargeBoxId;
 
-    @NotBlank(message = "Registration status is required")
-    private String registrationStatus;
+    /**
+     * https://github.com/steve-community/steve/pull/2030 switched from String to enum
+     */
+    @NotNull(message = "Registration status is required")
+    private RegistrationStatus registrationStatus;
 
     @NotNull
     private Boolean insertConnectorStatusAfterTransactionMsg;

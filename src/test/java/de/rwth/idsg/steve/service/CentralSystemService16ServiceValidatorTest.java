@@ -20,10 +20,17 @@ package de.rwth.idsg.steve.service;
 
 import jooq.steve.db.enums.TransactionStopEventActor;
 import jooq.steve.db.tables.records.TransactionRecord;
+import ocpp.cs._2015._10.Measurand;
 import ocpp.cs._2015._10.MeterValue;
 import ocpp.cs._2015._10.MeterValuesRequest;
+import ocpp.cs._2015._10.ReadingContext;
+import ocpp.cs._2015._10.Reason;
+import ocpp.cs._2015._10.SampledValue;
 import ocpp.cs._2015._10.StartTransactionRequest;
+import ocpp.cs._2015._10.StatusNotificationRequest;
 import ocpp.cs._2015._10.StopTransactionRequest;
+import ocpp.cs._2015._10.UnitOfMeasure;
+import ocpp.cs._2015._10.ValueFormat;
 import org.joda.time.DateTime;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -32,6 +39,7 @@ import org.mockito.Mockito;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -77,6 +85,36 @@ public class CentralSystemService16ServiceValidatorTest {
     }
 
     @Test
+    public void validateStatusNotification_connectorIdNegative_returnsError() {
+        var result = validator.validateStatusNotification(statusParams(-1, DateTime.parse("2026-02-17T12:00:00Z")));
+
+        Assertions.assertNotNull(result);
+        Assertions.assertEquals("StatusNotification.connectorId must not be negative", result.getMessage());
+    }
+
+    @Test
+    public void validateStatusNotification_futureTimestamp_returnsError() {
+        var result = validator.validateStatusNotification(statusParams(1, DateTime.parse("2026-02-17T12:05:01Z")));
+
+        Assertions.assertNotNull(result);
+        Assertions.assertEquals("StatusNotification.timestamp is in the future", result.getMessage());
+    }
+
+    @Test
+    public void validateStatusNotification_futureTimestampAtBoundary_isAllowed() {
+        var result = validator.validateStatusNotification(statusParams(1, DateTime.parse("2026-02-17T12:05:00Z")));
+
+        Assertions.assertNull(result);
+    }
+
+    @Test
+    public void validateStatusNotification_withoutTimestamp_isAllowed() {
+        var result = validator.validateStatusNotification(new StatusNotificationRequest().withConnectorId(1));
+
+        Assertions.assertNull(result);
+    }
+
+    @Test
     public void validateMeterValues_connectorIdNegative_returnsError() {
         var result = validator.validateMeterValues(meterValuesParams(-1, List.of(meterValue("2026-02-17T10:00:00Z"))));
 
@@ -103,6 +141,92 @@ public class CentralSystemService16ServiceValidatorTest {
     @Test
     public void validateMeterValues_valid_returnsNull() {
         var result = validator.validateMeterValues(meterValuesParams(1, List.of(meterValue("2026-02-17T12:05:00Z"))));
+
+        Assertions.assertNull(result);
+    }
+
+    @Test
+    public void validateMeterValuesWithTransaction_transactionMissing_returnsError() {
+        var result = validator.validateMeterValues(
+            meterValuesParams(1, List.of(meterValue("2026-02-17T10:00:00Z"))),
+            null
+        );
+
+        Assertions.assertNotNull(result);
+        Assertions.assertEquals("The transaction is not found in database", result.getMessage());
+    }
+
+    @Test
+    public void validateMeterValuesWithTransaction_transactionAlreadyStoppedByStation_returnsError() {
+        var tx = tx(
+            "100",
+            DateTime.parse("2026-02-17T09:00:00Z"),
+            "150",
+            DateTime.parse("2026-02-17T10:00:00Z"),
+            TransactionStopEventActor.station
+        );
+
+        var result = validator.validateMeterValues(
+            meterValuesParams(1, List.of(meterValue("2026-02-17T10:30:00Z"))),
+            tx
+        );
+
+        Assertions.assertNotNull(result);
+        Assertions.assertEquals("The transaction was already stopped by the station", result.getMessage());
+    }
+
+    @Test
+    public void validateMeterValuesWithTransaction_transactionAlreadyStoppedManually_isAllowed() {
+        var tx = tx(
+            "100",
+            DateTime.parse("2026-02-17T09:00:00Z"),
+            "150",
+            DateTime.parse("2026-02-17T10:00:00Z"),
+            TransactionStopEventActor.manual
+        );
+
+        var result = validator.validateMeterValues(
+            meterValuesParams(1, List.of(meterValue("2026-02-17T10:30:00Z"))),
+            tx
+        );
+
+        Assertions.assertNull(result);
+    }
+
+    @Test
+    public void validateMeterValuesWithTransaction_connectorIdNegative_returnsError() {
+        var tx = tx("100", DateTime.parse("2026-02-17T09:00:00Z"), null, null, null);
+
+        var result = validator.validateMeterValues(
+            meterValuesParams(-1, List.of(meterValue("2026-02-17T10:00:00Z"))),
+            tx
+        );
+
+        Assertions.assertNotNull(result);
+        Assertions.assertEquals("MeterValues.connectorId must not be negative", result.getMessage());
+    }
+
+    @Test
+    public void validateMeterValuesWithTransaction_beforeStartTimestamp_returnsError() {
+        var tx = tx("100", DateTime.parse("2026-02-17T09:00:00Z"), null, null, null);
+
+        var result = validator.validateMeterValues(
+            meterValuesParams(1, List.of(meterValue("2026-02-17T08:54:59Z"))),
+            tx
+        );
+
+        Assertions.assertNotNull(result);
+        Assertions.assertEquals("at least one MeterValue.timestamp is before start.timestamp", result.getMessage());
+    }
+
+    @Test
+    public void validateMeterValuesWithTransaction_valid_returnsNull() {
+        var tx = tx("100", DateTime.parse("2026-02-17T09:00:00Z"), null, null, null);
+
+        var result = validator.validateMeterValues(
+            meterValuesParams(1, List.of(meterValue("2026-02-17T10:00:00Z"))),
+            tx
+        );
 
         Assertions.assertNull(result);
     }
@@ -208,13 +332,158 @@ public class CentralSystemService16ServiceValidatorTest {
 
     @Test
     public void validateStop_transactionDataAfterStopTimestamp_returnsError() {
+        // more than 5 minutes (operational delta) after stop
         var tx = tx("100", DateTime.parse("2026-02-17T09:00:00Z"), null, null, null);
         var params = stopParams(DateTime.parse("2026-02-17T10:00:00Z"), "200")
-            .withTransactionData(List.of(meterValue("2026-02-17T10:00:01Z")));
+            .withTransactionData(List.of(meterValue("2026-02-17T10:10:00Z")));
         var result = validator.validateStop(tx, params);
 
         Assertions.assertNotNull(result);
         Assertions.assertEquals("at least one MeterValue.timestamp is after stop.timestamp", result.getMessage());
+    }
+
+    @Test
+    public void validateStop_transactionDataBeforeStartTimestamp_returnsError() {
+        // more than 5 minutes (operational delta) before start
+        var tx = tx("100", DateTime.parse("2026-02-17T09:00:00Z"), null, null, null);
+        var params = stopParams(DateTime.parse("2026-02-17T10:00:00Z"), "200")
+            .withTransactionData(List.of(meterValue("2026-02-17T08:54:59Z")));
+        var result = validator.validateStop(tx, params);
+
+        Assertions.assertNotNull(result);
+        Assertions.assertEquals("at least one MeterValue.timestamp is before start.timestamp", result.getMessage());
+    }
+
+    @Test
+    public void validateStop_transactionDataSlightlyBeforeStartTimestamp_isAllowed() {
+        // within 5 minutes (operational delta) before start — allowed for clock drift
+        var tx = tx("100", DateTime.parse("2026-02-17T09:00:00Z"), null, null, null);
+        var params = stopParams(DateTime.parse("2026-02-17T10:00:00Z"), "200")
+            .withTransactionData(List.of(meterValue("2026-02-17T08:55:01Z")));
+        var result = validator.validateStop(tx, params);
+
+        Assertions.assertNull(result);
+    }
+
+    @Test
+    public void validateStop_transactionDataAtStartTimestamp_isAllowed() {
+        var tx = tx("100", DateTime.parse("2026-02-17T09:00:00Z"), null, null, null);
+        var params = stopParams(DateTime.parse("2026-02-17T10:00:00Z"), "200")
+            .withTransactionData(List.of(meterValue("2026-02-17T09:00:00Z")));
+        var result = validator.validateStop(tx, params);
+
+        Assertions.assertNull(result);
+    }
+
+    /**
+     * this behavior is coming from a real station in the field: the latest of meterValues is 1 second
+     * after stopTimestamp, because the station sampled stop timestamp first, and then later the timestamp
+     * for this meterValue entry.
+     */
+    @Test
+    public void validateStop_transactionDataOneSecondAfterStop_isAllowed() {
+        var tx = tx("100", DateTime.parse("2026-02-17T09:00:00Z"), null, null, null);
+
+        var params = stopParams(DateTime.parse("2026-02-17T10:00:00Z"), "200")
+            .withTransactionData(List.of(meterValue("2026-02-17T10:00:01Z")));
+        var result = validator.validateStop(tx, params);
+
+        Assertions.assertNull(result);
+    }
+
+    /**
+     * we cannot and should not check whether timestamps are in chronological order. there are real and valid
+     * reasons for why they might not be: https://github.com/steve-community/steve/issues/1992
+     */
+    @Test
+    public void validateStop_outOfOrderTransactionData_isAllowed() {
+        var messageClock = Clock.fixed(Instant.parse("2026-03-25T08:10:00Z"), ZoneOffset.UTC);
+        var localValidator = new CentralSystemService16_ServiceValidator(messageClock);
+
+        var tx = tx("100", DateTime.parse("2026-03-25T06:22:44.000Z"), null, null, null);
+
+        StopTransactionRequest params = new StopTransactionRequest()
+            .withIdTag("XYZ")
+            .withMeterStop(200)
+            .withTimestamp(DateTime.parse("2026-03-25T07:58:42.000Z"))
+            .withTransactionId(123)
+            .withReason(Reason.OTHER)
+            .withTransactionData(List.of(
+                new MeterValue()
+                    .withTimestamp(DateTime.parse("2026-03-25T06:22:44.000Z"))
+                    .withSampledValue(sampledValue("101", ReadingContext.TRANSACTION_BEGIN, ValueFormat.RAW)),
+                new MeterValue()
+                    .withTimestamp(DateTime.parse("2026-03-25T07:58:42.000Z"))
+                    .withSampledValue(sampledValue("202", ReadingContext.TRANSACTION_END, ValueFormat.RAW)),
+                new MeterValue()
+                    .withTimestamp(DateTime.parse("2026-03-25T06:22:45.000Z"))
+                    .withSampledValue(sampledValue("102", ReadingContext.TRANSACTION_BEGIN, ValueFormat.SIGNED_DATA)),
+                new MeterValue()
+                    .withTimestamp(DateTime.parse("2026-03-25T07:58:43.000Z"))
+                    .withSampledValue(sampledValue("203", ReadingContext.TRANSACTION_END, ValueFormat.SIGNED_DATA))
+            ));
+
+        var result = localValidator.validateStop(tx, params);
+
+        Assertions.assertNull(result);
+    }
+
+    /**
+     * we cannot and should not check whether timestamps are in chronological order. there are real and valid
+     * reasons for why they might not be: https://github.com/steve-community/steve/issues/1992
+     */
+    @Test
+    public void validateMeterValues_timestampsOutOfOrder_returnsNull() {
+        var result = validator.validateMeterValues(meterValuesParams(1, List.of(
+            meterValue("2026-02-17T10:00:00Z"),
+            meterValue("2026-02-17T09:00:00Z")
+        )));
+
+        Assertions.assertNull(result);
+    }
+
+    @Test
+    public void validateMeterValues_timestampsInOrder_returnsNull() {
+        var result = validator.validateMeterValues(meterValuesParams(1, List.of(
+            meterValue("2026-02-17T09:00:00Z"),
+            meterValue("2026-02-17T09:30:00Z"),
+            meterValue("2026-02-17T10:00:00Z")
+        )));
+
+        Assertions.assertNull(result);
+    }
+
+    @Test
+    public void validateMeterValues_sameTimestamps_returnsNull() {
+        var result = validator.validateMeterValues(meterValuesParams(1, List.of(
+            meterValue("2026-02-17T10:00:00Z"),
+            meterValue("2026-02-17T10:00:00Z")
+        )));
+
+        Assertions.assertNull(result);
+    }
+
+    @Test
+    public void validateMeterValues_nullElementsInList_doesNotThrowNPE() {
+        // null MeterValue elements should be filtered out, not cause NPE
+        var result = validator.validateMeterValues(meterValuesParams(1, Arrays.asList(
+            null,
+            meterValue("2026-02-17T09:00:00Z"),
+            null
+        )));
+
+        Assertions.assertNull(result);
+    }
+
+    @Test
+    public void validateMeterValues_allNullElements_returnsError() {
+        // when all elements are null, all timestamps are filtered out → treated as empty
+        var result = validator.validateMeterValues(meterValuesParams(1, Arrays.asList(
+            null, null
+        )));
+
+        Assertions.assertNotNull(result);
+        Assertions.assertEquals("MeterValue.timestamp is empty", result.getMessage());
     }
 
     private static StopTransactionRequest stopParams(DateTime stopTimestamp, String meterStop) {
@@ -233,6 +502,12 @@ public class CentralSystemService16ServiceValidatorTest {
             .withIdTag("tag-1");
     }
 
+    private static StatusNotificationRequest statusParams(int connectorId, DateTime timestamp) {
+        return new StatusNotificationRequest()
+            .withConnectorId(connectorId)
+            .withTimestamp(timestamp);
+    }
+
     private static MeterValuesRequest meterValuesParams(int connectorId, List<MeterValue> values) {
         return new MeterValuesRequest()
             .withConnectorId(connectorId)
@@ -241,6 +516,15 @@ public class CentralSystemService16ServiceValidatorTest {
 
     private static MeterValue meterValue(String timestamp) {
         return new MeterValue().withTimestamp(DateTime.parse(timestamp));
+    }
+
+    private static SampledValue sampledValue(String value, ReadingContext context, ValueFormat format) {
+        return new SampledValue()
+            .withValue(value)
+            .withContext(context)
+            .withFormat(format)
+            .withMeasurand(Measurand.ENERGY_ACTIVE_IMPORT_REGISTER)
+            .withUnit(UnitOfMeasure.WH);
     }
 
     private static TransactionRecord tx(String startValue, DateTime startTimestamp,

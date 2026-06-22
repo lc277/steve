@@ -22,13 +22,15 @@ import de.rwth.idsg.steve.SteveException;
 import jooq.steve.db.enums.TransactionStopEventActor;
 import jooq.steve.db.tables.records.TransactionRecord;
 import lombok.RequiredArgsConstructor;
+import ocpp._2022._02.security.SecurityEventNotification;
 import ocpp.cs._2015._10.MeterValue;
 import ocpp.cs._2015._10.MeterValuesRequest;
 import ocpp.cs._2015._10.StartTransactionRequest;
+import ocpp.cs._2015._10.StatusNotificationRequest;
 import ocpp.cs._2015._10.StopTransactionRequest;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.joda.time.DateTime;
-import org.joda.time.base.AbstractInstant;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -45,15 +47,42 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CentralSystemService16_ServiceValidator {
 
+    private static final DateTime MIN = new DateTime(0);
+    private static final DateTime MAX = new DateTime(Long.MAX_VALUE);
+
     private final Clock clock;
-    private final Duration operationalDeltaForNow;
+    private final Duration operationalDelta;
 
     @Autowired
     public CentralSystemService16_ServiceValidator(Clock clock) {
         this(clock, Duration.ofMinutes(5));
     }
 
-    public SteveException validateStart(StartTransactionRequest params) {
+    public SteveException validateStatusNotification(@NotNull StatusNotificationRequest params) {
+        if (params.getConnectorId() < 0) {
+            return new SteveException("StatusNotification.connectorId must not be negative");
+        }
+
+        if (params.isSetTimestamp()) {
+            long deltaMillis = operationalDelta.toMillis();
+            if (params.getTimestamp().getMillis() > clock.instant().toEpochMilli() + deltaMillis) {
+                return new SteveException("StatusNotification.timestamp is in the future");
+            }
+        }
+
+        return null;
+    }
+
+    public SteveException validateSecurityEvent(@NotNull SecurityEventNotification params) {
+        long deltaMillis = operationalDelta.toMillis();
+        if (params.getTimestamp().getMillis() > clock.instant().toEpochMilli() + deltaMillis) {
+            return new SteveException("SecurityEventNotification.timestamp is in the future");
+        }
+
+        return null;
+    }
+
+    public SteveException validateStart(@NotNull StartTransactionRequest params) {
         if (params.getConnectorId() < 1) {
             return new SteveException("StartTransaction.connectorId must be positive");
         }
@@ -62,14 +91,14 @@ public class CentralSystemService16_ServiceValidator {
             return new SteveException("StartTransaction.meterStart must not be negative");
         }
 
-        if (params.getTimestamp().getMillis() > clock.instant().plus(operationalDeltaForNow).toEpochMilli()) {
+        if (params.getTimestamp().getMillis() > clock.instant().plus(operationalDelta).toEpochMilli()) {
             return new SteveException("StartTransaction.timestamp is in the future");
         }
 
         return null;
     }
 
-    public SteveException validateStop(TransactionRecord thisTx, StopTransactionRequest stopParams) {
+    public SteveException validateStop(TransactionRecord thisTx, @NotNull StopTransactionRequest stopParams) {
         if (thisTx == null) {
             return new SteveException("The transaction is not found in database");
         }
@@ -86,7 +115,7 @@ public class CentralSystemService16_ServiceValidator {
             return new SteveException("start.timestamp is after stop.timestamp");
         }
 
-        if (stopParams.getTimestamp().getMillis() > clock.instant().plus(operationalDeltaForNow).toEpochMilli()) {
+        if (stopParams.getTimestamp().getMillis() > clock.instant().plus(operationalDelta).toEpochMilli()) {
             return new SteveException("stop.timestamp is in the future");
         }
 
@@ -94,39 +123,93 @@ public class CentralSystemService16_ServiceValidator {
             return new SteveException("meterStart is greater than meterStop");
         }
 
-        return this.validateMeterValuesInternal(stopParams.getTransactionData(), stopParams.getTimestamp());
+        return this.validateMeterValuesInternal(stopParams.getTransactionData(), thisTx.getStartTimestamp(), stopParams.getTimestamp());
     }
 
-    public SteveException validateMeterValues(MeterValuesRequest params) {
+    /**
+     * Validation for MeterValues with transaction reference, i.e. a transaction must exist
+     */
+    public SteveException validateMeterValues(@NotNull MeterValuesRequest params, TransactionRecord thisTx) {
+        if (thisTx == null) {
+            return new SteveException("The transaction is not found in database");
+        }
+
+        boolean wasStopped = thisTx.getStopEventActor() == TransactionStopEventActor.station
+            && thisTx.getStopValue() != null
+            && thisTx.getStopTimestamp() != null;
+
+        if (wasStopped) {
+            return new SteveException("The transaction was already stopped by the station");
+        }
+
         if (params.getConnectorId() < 0) {
             return new SteveException("MeterValues.connectorId must not be negative");
         }
 
-        return this.validateMeterValuesInternal(params.getMeterValue(), null);
+        return this.validateMeterValuesInternal(params.getMeterValue(), thisTx.getStartTimestamp(), null);
     }
 
-    private SteveException validateMeterValuesInternal(List<MeterValue> meterValues, @Nullable DateTime stopTimestamp) {
+    /**
+     * Validation for MeterValues without any transaction reference
+     */
+    public SteveException validateMeterValues(@NotNull MeterValuesRequest params) {
+        if (params.getConnectorId() < 0) {
+            return new SteveException("MeterValues.connectorId must not be negative");
+        }
+
+        return this.validateMeterValuesInternal(params.getMeterValue(), null, null);
+    }
+
+    private SteveException validateMeterValuesInternal(List<MeterValue> meterValues,
+                                                       @Nullable DateTime startTimestamp,
+                                                       @Nullable DateTime stopTimestamp) {
         if (CollectionUtils.isEmpty(meterValues)) {
             return null;
         }
 
-        DateTime latest = meterValues.stream()
-            .map(MeterValue::getTimestamp)
-            .filter(java.util.Objects::nonNull)
-            .max(AbstractInstant::compareTo)
-            .orElse(null);
+        DateTime earliest = MAX;
+        DateTime latest = MIN;
 
-        // should not happen because of @NotNull
-        if (latest == null) {
+        // single pass: track earliest and latest
+        for (MeterValue mv : meterValues) {
+            if (mv == null) {
+                continue;
+            }
+
+            DateTime ts = mv.getTimestamp();
+
+            // should not happen because of @NotNull
+            if (ts == null) {
+                return new SteveException("MeterValue.timestamp is empty");
+            }
+
+            if (ts.isBefore(earliest)) earliest = ts;
+            if (ts.isAfter(latest))  latest = ts;
+        }
+
+        if (earliest == MAX || latest == MIN) {
             return new SteveException("MeterValue.timestamp is empty");
         }
 
-        if (latest.getMillis() > clock.instant().plus(operationalDeltaForNow).toEpochMilli()) {
+        // allow operational delta tolerance for the following timestamp checks, since charge points
+        // may have slight clock drift and meter values can be sampled a little bit later or before
+        // our reference point.
+        long deltaMillis = operationalDelta.toMillis();
+
+        if (latest.getMillis() > clock.instant().toEpochMilli() + deltaMillis) {
             return new SteveException("at least one MeterValue.timestamp is in the future");
         }
 
-        if (stopTimestamp != null && latest.isAfter(stopTimestamp)) {
-            return new SteveException("at least one MeterValue.timestamp is after stop.timestamp");
+        if (stopTimestamp != null) {
+            if (latest.getMillis() > stopTimestamp.getMillis() + deltaMillis) {
+                return new SteveException("at least one MeterValue.timestamp is after stop.timestamp");
+            }
+        }
+
+        if (startTimestamp != null) {
+            if (earliest.getMillis() < startTimestamp.getMillis() - deltaMillis) {
+                return new SteveException("at least one MeterValue.timestamp is before start.timestamp");
+            }
         }
 
         return null;

@@ -19,11 +19,13 @@
 package de.rwth.idsg.steve.repository;
 
 import de.rwth.idsg.steve.ocpp.OcppProtocol;
+import de.rwth.idsg.steve.ocpp.OcppSecurityProfile;
 import de.rwth.idsg.steve.repository.dto.ChargePoint;
 import de.rwth.idsg.steve.repository.dto.ChargePointRegistration;
 import de.rwth.idsg.steve.repository.dto.ChargePointSelect;
 import de.rwth.idsg.steve.repository.dto.ConnectorStatus;
-import de.rwth.idsg.steve.web.dto.ChargePointForm;
+import de.rwth.idsg.steve.web.dto.ChargePointFormForCreate;
+import de.rwth.idsg.steve.web.dto.ChargePointFormForUpdate;
 import de.rwth.idsg.steve.web.dto.ChargePointQueryForm;
 import de.rwth.idsg.steve.web.dto.ConnectorStatusForm;
 import org.jetbrains.annotations.Nullable;
@@ -38,7 +40,9 @@ import java.util.Optional;
  */
 public interface ChargePointRepository {
     Optional<ChargePointRegistration> getRegistration(String chargeBoxId);
-    void updateCpoName(String chargeBoxId, String cpoName);
+    void updateBasicAuthPassword(String chargeBoxId, String encodedPwd);
+    void updateSecurityProfile(String chargeBoxId, OcppSecurityProfile ocppSecurityProfile);
+    void updateOcppConfiguration(String chargeBoxId, String jsonNode);
 
     List<ChargePointSelect> getChargePointSelect(OcppProtocol protocol, List<String> inStatusFilter, List<String> chargeBoxIdFilter);
 
@@ -53,7 +57,7 @@ public interface ChargePointRepository {
     List<Integer> getNonZeroConnectorIds(String chargeBoxId);
 
     void addChargePointList(List<String> chargeBoxIdList);
-    int addChargePoint(ChargePointForm form);
-    void updateChargePoint(ChargePointForm form);
+    int addChargePoint(ChargePointFormForCreate form);
+    void updateChargePoint(ChargePointFormForUpdate form);
     void deleteChargePoint(int chargeBoxPk);
 }

@@ -21,6 +21,10 @@ package de.rwth.idsg.steve.repository;
 import de.rwth.idsg.steve.repository.dto.Transaction;
 import de.rwth.idsg.steve.repository.dto.TransactionDetails;
 import de.rwth.idsg.steve.web.dto.TransactionQueryForm;
+import jooq.steve.db.tables.records.TransactionRecord;
+import org.jetbrains.annotations.NotNull;
+import org.joda.time.DateTime;
+import org.jooq.Result;
 
 import java.io.Writer;
 import java.util.List;
@@ -36,5 +40,7 @@ public interface TransactionRepository {
 
     List<Integer> getActiveTransactionIds(String chargeBoxId);
 
-    TransactionDetails getDetails(int transactionPk);
+    TransactionDetails getDetails(int transactionPk, boolean energyValuesOnly);
+
+    Result<TransactionRecord> getStoppedTransactions(@NotNull DateTime from, @NotNull DateTime to);
 }

@@ -29,7 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 
 import static de.rwth.idsg.steve.web.dto.ocpp.ConfigurationKeyEnum.AuthorizationKey;
-import static de.rwth.idsg.steve.web.dto.ocpp.ConfigurationKeyEnum.CpoName;
+import static de.rwth.idsg.steve.web.dto.ocpp.ConfigurationKeyEnum.SecurityProfile;
 import static ocpp.cp._2015._10.ConfigurationStatus.ACCEPTED;
 
 /**
@@ -110,13 +110,22 @@ public class ChangeConfigurationTask extends CommunicationTask<ChangeConfigurati
         return res -> {
             try {
                 var status = res.get().getStatus();
-                if (status == ACCEPTED && CpoName.name().equals(params.getKey())) {
-                    chargePointService.updateCpoName(chargeBoxId, params.getValue());
+                if (status == ACCEPTED) {
+                    updateDatabaseAfterAccepted(chargeBoxId);
                 }
                 success(chargeBoxId, status);
             } catch (Exception e) {
                 failed(chargeBoxId, e);
             }
         };
+    }
+
+    private void updateDatabaseAfterAccepted(String chargeBoxId) {
+        if (AuthorizationKey.name().equals(params.getKey())) {
+            chargePointService.updateBasicAuthPassword(chargeBoxId, params.getValue());
+
+        } else if (SecurityProfile.name().equals(params.getKey())) {
+            chargePointService.updateSecurityProfile(chargeBoxId, params.getValue());
+        }
     }
 }

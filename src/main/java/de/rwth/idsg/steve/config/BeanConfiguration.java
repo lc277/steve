@@ -18,7 +18,6 @@
  */
 package de.rwth.idsg.steve.config;
 
-import com.mysql.cj.conf.PropertyKey;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import de.rwth.idsg.steve.service.DummyReleaseCheckService;
@@ -32,6 +31,7 @@ import org.jooq.conf.Settings;
 import org.jooq.impl.DSL;
 import org.jooq.impl.DataSourceConnectionProvider;
 import org.jooq.impl.DefaultConfiguration;
+import org.jooq.tools.jdbc.JDBCUtils;
 import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceProperties;
 import org.springframework.context.annotation.Bean;
@@ -40,7 +40,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -48,7 +47,7 @@ import org.springframework.web.servlet.view.InternalResourceViewResolver;
 import tools.jackson.datatype.joda.JodaModule;
 
 import javax.sql.DataSource;
-
+import java.sql.SQLException;
 import java.time.Clock;
 
 import static tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES;
@@ -85,18 +84,40 @@ public class BeanConfiguration implements WebMvcConfigurer {
         hc.setPassword(properties.getPassword());
 
         // set non-standard params
-        hc.addDataSourceProperty(PropertyKey.cachePrepStmts.getKeyName(), true);
-        hc.addDataSourceProperty(PropertyKey.useServerPrepStmts.getKeyName(), true);
-        hc.addDataSourceProperty(PropertyKey.prepStmtCacheSize.getKeyName(), 250);
-        hc.addDataSourceProperty(PropertyKey.prepStmtCacheSqlLimit.getKeyName(), 2048);
-        hc.addDataSourceProperty(PropertyKey.characterEncoding.getKeyName(), "utf8");
-        hc.addDataSourceProperty(PropertyKey.connectionTimeZone.getKeyName(), SteveProperties.TIME_ZONE_ID);
-        hc.addDataSourceProperty(PropertyKey.useSSL.getKeyName(), true);
+        // https://dev.mysql.com/doc/connector-j/en/connector-j-reference-configuration-properties.html
+        // https://mariadb.com/docs/connectors/mariadb-connector-j/about-mariadb-connector-j
+        hc.addDataSourceProperty("cachePrepStmts", true);
+        hc.addDataSourceProperty("useServerPrepStmts", true);
+        hc.addDataSourceProperty("prepStmtCacheSize", 250);
+        hc.addDataSourceProperty("prepStmtCacheSqlLimit", 2048);
+        hc.addDataSourceProperty("characterEncoding", "utf8");
+        hc.addDataSourceProperty("connectionTimeZone", SteveProperties.TIME_ZONE_ID);
+        hc.addDataSourceProperty("useSSL", true);
 
         // https://github.com/steve-community/steve/issues/736
         hc.setMaxLifetime(580_000);
 
         return new HikariDataSource(hc);
+    }
+
+    /**
+     * We are using the same strategy as Spring Boot's auto-detection.
+     *
+     * https://github.com/spring-projects/spring-boot/blob/main/module/spring-boot-jooq/src/main/java/org/springframework/boot/jooq/autoconfigure/SqlDialectLookup.java
+     */
+    @Bean
+    public SQLDialect jooqSqlDialect(DataSource dataSource) {
+        SQLDialect fallback = SQLDialect.MYSQL;
+
+        try (var connection = dataSource.getConnection()) {
+            var dialect = JDBCUtils.dialect(connection);
+            var dialectToReturn = (dialect == SQLDialect.DEFAULT) ? fallback : dialect;
+            log.info("Using jOOQ dialect {}", dialectToReturn);
+            return dialectToReturn;
+        } catch (SQLException e) {
+            log.warn("Could not detect database dialect. Falling back to jOOQ dialect {}.", fallback, e);
+            return fallback;
+        }
     }
 
     /**
@@ -113,7 +134,8 @@ public class BeanConfiguration implements WebMvcConfigurer {
      */
     @Bean
     public DSLContext dslContext(DataSource dataSource,
-                                 SteveProperties steveProperties) {
+                                 SteveProperties steveProperties,
+                                 SQLDialect jooqSqlDialect) {
         Settings settings = new Settings()
                 // Normally, the records are "attached" to the Configuration that created (i.e. fetch/insert) them.
                 // This means that they hold an internal reference to the same database connection that was used.
@@ -125,7 +147,7 @@ public class BeanConfiguration implements WebMvcConfigurer {
 
         // Configuration for JOOQ
         org.jooq.Configuration conf = new DefaultConfiguration()
-                .set(SQLDialect.MYSQL)
+                .set(jooqSqlDialect)
                 .set(new DataSourceConnectionProvider(dataSource))
                 .set(settings);
 
