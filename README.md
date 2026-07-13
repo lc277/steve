@@ -41,14 +41,13 @@ DROP USER IF EXISTS 'steve'@'localhost';
 
 4. 创建 SteVe 所需的数据库和用户
 
-<<<<<<< HEAD
-设置时区
 =======
 SteVe requires 
 * JDK 21 or newer
 * Maven 
 * MySQL or MariaDB. You should use [one of these](.github/workflows/main.yml#L11-L35) supported versions.
->>>>>>> master
+
+设置时区
 
 ```
 SET GLOBAL time_zone = '+00:00';
@@ -65,7 +64,8 @@ GRANT ALL PRIVILEGES ON stevedb.* TO 'steve'@'localhost';
 在项目根目录下执行：
 
 ```
-./mvnw package
+./mvnw package "-Pprod,mysql"
+
 ```
 
 6. 启动 SteVe

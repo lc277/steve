@@ -1,0 +1,21 @@
+C:\ProgramData\MySQL\MySQL Server 8.4\my.ini
+my.ini
+[mysqld]
+default-time-zone = '+00:00'
+
+
+net stop mysql84
+net start mysql84
+
+
+
+DROP DATABASE IF EXISTS stevedb;
+DROP USER IF EXISTS 'steve'@'localhost';
+
+
+CREATE DATABASE stevedb CHARACTER SET utf8 COLLATE utf8_unicode_ci;
+CREATE USER 'steve'@'localhost' IDENTIFIED BY 'changeme';
+GRANT ALL PRIVILEGES ON stevedb.* TO 'steve'@'localhost';
+
+./mvnw package "-Pprod,mysql"
+java -jar target/steve.war
